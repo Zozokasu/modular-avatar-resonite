@@ -45,6 +45,11 @@ enum MaterialCategory {
   FAKE_SHADOW = 3;
 }
 
+enum ToonOutlineMode {
+  TOON_OUTLINE_NONE = 0;
+  TOON_OUTLINE_LIT = 1;
+}
+
 message Material {
   MaterialCategory category = 15;
   optional AssetID main_texture = 1;
@@ -72,7 +77,16 @@ message Material {
   optional float smoothness = 17;
   optional float metallic = 18;
   optional float reflectivity = 19;
-  
+
+  // For the asset reference fields below, an unset field lets the backend fall back to its
+  // shared (exemplar) configuration, while an explicit AssetID of 0 forces a null reference.
+  optional AssetID shadow_ramp = 20;
+  optional AssetID shadow_ramp_mask = 21;
+  optional ToonOutlineMode outline = 22;
+  optional Color outline_color = 23;
+  optional float outline_width = 24;
+  optional AssetID outline_mask = 25;
+
   // TODO...
 }
 

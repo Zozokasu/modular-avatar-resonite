@@ -5,8 +5,12 @@ using System.Diagnostics.CodeAnalysis;
 using nadena.dev.ndmf.proto;
 using UnityEditor;
 using UnityEngine;
+#if MA_LILTOON_PRESENT
+using lilToon;
+#endif
 using Material = UnityEngine.Material;
 using Texture = UnityEngine.Texture;
+using TextureFormat = UnityEngine.TextureFormat;
 
 namespace nadena.dev.ndmf.platform.resonite
 {
@@ -60,7 +64,10 @@ namespace nadena.dev.ndmf.platform.resonite
                 protoMat.Smoothness = smoothness.floatValue;
             }
             protoMat.Reflectivity = reflectance.floatValue;
-            
+
+            TranslateShadowSettings(material, protoMat);
+            TranslateOutlineSettings(material, protoMat);
+
             // Update culling/etc settings based on liltoon config
             // TODO: lilToonMulti
 
@@ -81,6 +88,118 @@ namespace nadena.dev.ndmf.platform.resonite
             }
 
             return true;
+        }
+
+        private const int ShadowRampWidth = 128;
+        private const int ShadowRampGradientHeight = 128;
+
+        private void TranslateShadowSettings(Material material, proto.Material protoMat)
+        {
+            var shadowEnabled = useShadow.floatValue > 0.5f;
+            var maskTexture = shadowEnabled ? shadowStrengthMask.textureValue : null;
+
+            Texture2D ramp;
+            if (shadowEnabled)
+            {
+                ramp = lilToon2Ramp.Convert(material, ShadowRampWidth);
+                _tempObjects.Add(ramp);
+                if (maskTexture != null)
+                {
+                    ramp = ApplyShadowStrengthGradient(ramp);
+                }
+            }
+            else
+            {
+                ramp = CreateSolidWhiteRamp();
+            }
+
+            ramp.name = $"{material.name}_ShadowRamp";
+            ramp.wrapMode = TextureWrapMode.Clamp;
+
+            if (textureImporter(ramp, null, out var rampId, out _))
+            {
+                protoMat.ShadowRamp = rampId;
+            }
+
+            // An explicit null keeps the backend from binding this field to the shared exemplar.
+            protoMat.ShadowRampMask = new() { Id = 0 };
+            if (maskTexture != null && textureImporter(maskTexture, maskTexture, out var maskId, out _))
+            {
+                protoMat.ShadowRampMask = maskId;
+            }
+        }
+
+        // XiexeToon samples the ramp vertically by ShadowRampMask.R (1.0 = top row). Blending a
+        // vertical white gradient (opaque at the bottom row) makes mask values below 1.0
+        // progressively disable the shadow, matching liltoon's _ShadowStrengthMask semantics.
+        private Texture2D ApplyShadowStrengthGradient(Texture2D baseRamp)
+        {
+            var srcPixels = baseRamp.GetPixels32();
+            var dstPixels = new Color32[ShadowRampWidth * ShadowRampGradientHeight];
+
+            for (var y = 0; y < ShadowRampGradientHeight; y++)
+            {
+                var whiteAlpha = 255 - Mathf.RoundToInt(y * 255f / (ShadowRampGradientHeight - 1));
+                for (var x = 0; x < ShadowRampWidth; x++)
+                {
+                    dstPixels[y * ShadowRampWidth + x] = BlendTowardsWhite(srcPixels[x], whiteAlpha);
+                }
+            }
+
+            var dst = new Texture2D(ShadowRampWidth, ShadowRampGradientHeight, TextureFormat.RGBA32, false, false);
+            _tempObjects.Add(dst);
+            dst.SetPixels32(dstPixels);
+            dst.Apply();
+            return dst;
+        }
+
+        private static Color32 BlendTowardsWhite(Color32 src, int alpha)
+        {
+            return new Color32(
+                (byte)(src.r + ((255 - src.r) * alpha + 127) / 255),
+                (byte)(src.g + ((255 - src.g) * alpha + 127) / 255),
+                (byte)(src.b + ((255 - src.b) * alpha + 127) / 255),
+                255
+            );
+        }
+
+        private Texture2D CreateSolidWhiteRamp()
+        {
+            var tex = new Texture2D(ShadowRampWidth, 16, TextureFormat.RGBA32, false, false);
+            _tempObjects.Add(tex);
+            var pixels = new Color32[ShadowRampWidth * 16];
+            for (var i = 0; i < pixels.Length; i++)
+            {
+                pixels[i] = new Color32(255, 255, 255, 255);
+            }
+            tex.SetPixels32(pixels);
+            tex.Apply();
+            return tex;
+        }
+
+        private void TranslateOutlineSettings(Material material, proto.Material protoMat)
+        {
+            var shaderName = material.shader.name;
+            var outlineEnabled = lilShaderUtils.IsMultiShaderName(shaderName)
+                ? material.GetFloatSafe("_UseOutline", 0f).Value > 0.5f
+                : lilShaderUtils.IsOutlineShaderName(shaderName);
+
+            protoMat.Outline = outlineEnabled ? ToonOutlineMode.ToonOutlineLit : ToonOutlineMode.ToonOutlineNone;
+            protoMat.OutlineMask = new() { Id = 0 };
+
+            if (!outlineEnabled) return;
+
+            var color = outlineColor.colorValue.ToRPC();
+            color.Profile = ColorProfile.SRgb;
+            protoMat.OutlineColor = color;
+            // liltoon multiplies _OutlineWidth by 0.01 in-shader to get object-space units
+            protoMat.OutlineWidth = outlineWidth.floatValue * 1.0f;
+
+            var widthMask = outlineWidthMask.textureValue;
+            if (widthMask != null && textureImporter(widthMask, widthMask, out var maskId, out _))
+            {
+                protoMat.OutlineMask = maskId;
+            }
         }
 
         private void BakeMetallicMap(Material material, proto.Material protoMat)

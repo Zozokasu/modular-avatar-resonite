@@ -190,6 +190,12 @@ public partial class RootConverter
             mat.EmissionMap.Value = AssetRefID<f.IAssetProvider<f.Texture2D>>(src.EmissionMap);     
             mat.Matcap.Value = AssetRefID<f.IAssetProvider<f.Texture2D>>(src.MatcapTexture);
             mat.MetallicGlossMap.Target = Asset<f.IAssetProvider<f.ITexture2D>>(src.SmoothnessMetallicReflectionMap)!;
+            if (src.ShadowRamp != null)
+                mat.ShadowRamp.Value = AssetRefID<f.IAssetProvider<f.Texture2D>>(src.ShadowRamp);
+            if (src.ShadowRampMask != null)
+                mat.ShadowRampMask.Value = AssetRefID<f.IAssetProvider<f.Texture2D>>(src.ShadowRampMask);
+            if (src.OutlineMask != null)
+                mat.OutlineMask.Value = AssetRefID<f.IAssetProvider<f.Texture2D>>(src.OutlineMask);
         });
         
         if (src.MainTextureScaleOffset != null)
@@ -247,13 +253,22 @@ public partial class RootConverter
         {
             mat.RenderQueue.Value = src.UnityRenderQueue;
         }
-        
-        BindExemplarValues(mat, _xsExemplar);
+
+        if (src.HasOutline)
+        {
+            mat.Outline.Value = src.Outline == p.ToonOutlineMode.ToonOutlineLit
+                ? f.XiexeToonMaterial.OutlineStyle.Lit
+                : f.XiexeToonMaterial.OutlineStyle.None;
+        }
+        if (src.OutlineColor != null) mat.OutlineColor.Value = src.OutlineColor.ColorX();
+        if (src.HasOutlineWidth) mat.OutlineWidth.Value = src.OutlineWidth;
+
+        BindExemplarValues(mat, _xsExemplar, src);
 
         return mat;
     }
 
-    private void BindExemplarValues(f.XiexeToonMaterial mat, f.XiexeToonMaterial xsExemplar)
+    private void BindExemplarValues(f.XiexeToonMaterial mat, f.XiexeToonMaterial xsExemplar, p.Material src)
     {
         var bindings = mat.Slot.AddSlot("Bindings");
         
@@ -267,13 +282,15 @@ public partial class RootConverter
         BindField(mat.SpecularIntensity);
         BindField(mat.SpecularArea);
         
-        BindField(mat.Outline);
-        BindField(mat.OutlineWidth);
-        BindField(mat.OutlineColor);
+        // Fields sent per-material by the Unity side are set directly and must not be
+        // rebound to the shared exemplar, or its values would override them.
+        if (!src.HasOutline) BindField(mat.Outline);
+        if (!src.HasOutlineWidth) BindField(mat.OutlineWidth);
+        if (src.OutlineColor == null) BindField(mat.OutlineColor);
         BindField(mat.OutlineAlbedoTint);
-        // outline mask
-        BindField(mat.ShadowRamp);
-        // shadow ramp mask
+        if (src.OutlineMask == null) BindField(mat.OutlineMask);
+        if (src.ShadowRamp == null) BindField(mat.ShadowRamp);
+        if (src.ShadowRampMask == null) BindField(mat.ShadowRampMask);
         BindField(mat.ShadowRim);
         BindField(mat.ShadowSharpness);
         BindField(mat.ShadowRimRange);
