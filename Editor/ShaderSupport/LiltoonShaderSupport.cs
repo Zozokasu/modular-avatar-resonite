@@ -192,7 +192,8 @@ namespace nadena.dev.ndmf.platform.resonite
             var color = outlineColor.colorValue.ToRPC();
             color.Profile = ColorProfile.SRgb;
             protoMat.OutlineColor = color;
-            // liltoon multiplies _OutlineWidth by 0.01 in-shader to get object-space units
+            // XiexeToon's OutlineWidth takes the same 0-1 scale value as liltoon's _OutlineWidth
+            // slider (no 0.01 object-space conversion; calibrated visually in Resonite)
             protoMat.OutlineWidth = outlineWidth.floatValue * 1.0f;
 
             var widthMask = outlineWidthMask.textureValue;
